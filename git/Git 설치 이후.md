@@ -2,7 +2,7 @@
 ```
 git init
 ```
-폴더에 .git 폴더 생성 확인 (숨김파일일)
+폴더에 .git 폴더 생성 확인 (숨김파일)
 
 
 ### 2. Git 이름과 이메일 주소 설정
@@ -31,7 +31,7 @@ git status
 5-1 파일을 추가
 git add .
 
-5-2 커밋밋
+5-2 커밋
 git commit -m "Initial commit"
 
 5-3 커밋 후 원격 저장소에 푸시
