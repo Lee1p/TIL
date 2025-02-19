@@ -34,7 +34,7 @@ git add .
 5-2 커밋밋
 git commit -m "Initial commit"
 
-5-3 커밋 후 원격 저장소에 푸시시
+5-3 커밋 후 원격 저장소에 푸시
 git push -u origin master
 ```
 
