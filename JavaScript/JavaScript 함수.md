@@ -63,4 +63,36 @@ EX)
         var n2 = '300';
         console.log(typeof n2); // string
         console.log(parseInt(n2), typeof parseInt(n2)); 결과값: 300, number 
-'''
+```
+
+### 자바스크립트 이벤트 
+
+이벤트 적용하는 방법은 크게 세 가지가 있다. 
+1. HTML 태그에서 직접 설정하는 방식 (인라인 방식) / 비추천
+
+```javascript
+<button onclick="alert('버튼이 클릭되었습니다!')">클릭</button>
+```
+2. 자바스크립트에서 onXXX 속성을 사용하는 방식(이벤트 핸들러 방식)
+
+```javascript
+<button id="myButton">클릭</button>
+
+<script>
+  document.getElementById("myButton").onclick = function() {
+    alert("버튼이 클릭되었습니다!");
+  };
+</script>
+```
+
+3.  addEventListener() 메서드를 사용하는 방식 ✨추천
+
+```javascript
+<button id="myButton">클릭</button>
+
+<script>
+  document.getElementById("myButton").addEventListener("click", function() {
+    alert("버튼이 클릭되었습니다!");
+  });
+</script>
+```
