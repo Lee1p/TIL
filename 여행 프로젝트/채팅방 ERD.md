@@ -68,7 +68,7 @@ CREATE TABLE chatroom_user (
     left_at              DATE,                -- 채팅방 퇴장 시각 (nullable)
     is_active            CHAR(1) DEFAULT 'Y' 
                          CHECK (is_active IN ('Y', 'N')),
-                         -- 현재 채팅방 접속 여부 (실시간 목록 판단용)
+                         -- 채팅방 접속 여부 (실시간 목록 판단용)
 
     is_kicked            CHAR(1) DEFAULT 'N' 
                          CHECK (is_kicked IN ('Y', 'N')), -- 강제 퇴장 여부
@@ -161,3 +161,94 @@ CREATE TABLE chatroom_like (
 is_kicked      CHAR(1) DEFAULT 'N' CHECK (is_kicked IN ('Y', 'N')),
 kicked_at      DATE
 ```
+
+
+### ✅ 메시지(Message) 테이블
+
+하나의 채팅방에는 여러 사용자가 참여할 수 있음. 이 메시지 테이블에는 채팅방 안에서 실제 주고받는 채팅 메시지를 저장 </br>
+메시지 테이블에서 수십만~수백만 건 이상이 되는 테이블을 어떻게 관리할지 생각을해봐야한다.
+인덱스, 파티셔닝 전략으로 고민하는게 좋을듯 
+
+전체적인 정리 
+"한 명의 회원은 여러 개의 채팅방에 참여할 수 있고, 각 채팅방에서 여러 개의 메시지를 보낼 수 있다."
+
+2. 메시지는 "어떤 방에서", "누가", "무엇을 말했는가"만 기록하면 된다
+chatroom_id: 어떤 방에서
+
+member_id: 누가
+
+message_content: 무엇을
+
+👉 이 3가지 정보면 메시지
+
+
+```SQL
+
+CREATE TABLE chat_message (
+    message_id       NUMBER PRIMARY KEY,
+    chatroom_id      NUMBER NOT NULL,
+    member_id        NUMBER NOT NULL,
+    
+    message_type     VARCHAR2(20 CHAR) DEFAULT 'TEXT'
+                     CHECK (message_type IN ('TEXT', 'IMAGE', 'VIDEO', 'LOCATION', 'SYSTEM')),
+
+    message_content  CLOB,                     -- 텍스트 메시지 / 시스템 메시지 / 위치 설명글
+    file_url         VARCHAR2(255),            -- 첨부파일 경로 (이미지, 영상 등)
+    file_type        VARCHAR2(50),             -- MIME 타입 (image/png 등)
+
+    latitude         NUMBER(9,6),              -- 위치 위도
+    longitude        NUMBER(9,6),              -- 위치 경도
+    location_name    VARCHAR2(100),            -- 장소 이름 (예: 강릉 초당 순두부 거리)
+
+    sent_at          DATE DEFAULT SYSDATE,
+
+    CONSTRAINT fk_msg_chatroom FOREIGN KEY (chatroom_id) REFERENCES chatroom(chatroom_id),
+    CONSTRAINT fk_msg_member FOREIGN KEY (member_id) REFERENCES members(member_id)
+);
+
+
+```
+
+
+
+------------------------------
+✅ 그럼 chatroom_user_id는 언제 쓰냐?
+쓰임새	예시
+실시간 참여 여부 판단	현재 채팅방 유저 목록 표시
+역할 기반 권한 체크	강퇴, 매니저 위임 등
+채팅방 프로필 추적	방마다 다른 프로필 이미지 설정 시 표시용
+
+
+### 해시태그 테이블
+
+"채팅방 생성자가 여러 해시태그를 등록할 수 있고, 해시태그 하나는 여러 채팅방에서 사용될 수 있다"
+
+🔹 하나의 채팅방 → 여러 해시태그 가능 (1:N)
+🔹 하나의 해시태그 → 여러 채팅방에서 사용 가능 (1:N)
+
+=> 즉, 채팅방과 해시태그는 **N:M (다대다)** 관계!
+
+요구사항 분석을 기반으로 하나의 채팅방은 최대 5개의 해시태그를 가짐
+하나의 해시태그는 여러 채팅방에서 공유될 수 있음.
+✅ 대소문자 구분 없이 검색 (모두 소문자로 변환해 저장/검색)
+
+
+```sql
+CREATE TABLE hashtag (
+    hashtag_id   NUMBER PRIMARY KEY, -- 해시태그 고유 ID
+    tag          VARCHAR2(30) NOT NULL -- 해시태그 텍스트 
+);
+```
+
+```sql
+CREATE TABLE chatroom_hashtag (
+    chatroom_id   NUMBER NOT NULL,
+    hashtag_id    NUMBER NOT NULL,
+
+    CONSTRAINT pk_chatroom_hashtag PRIMARY KEY (chatroom_id, hashtag_id),
+    CONSTRAINT fk_ch_hashtag FOREIGN KEY (hashtag_id) REFERENCES hashtag(hashtag_id),
+    CONSTRAINT fk_ch_chatroom FOREIGN KEY (chatroom_id) REFERENCES chatroom(chatroom_id)
+);
+```
+
+
