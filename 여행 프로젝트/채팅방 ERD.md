@@ -239,7 +239,7 @@ CREATE TABLE chat_message (
 ```sql
 CREATE TABLE hashtag (
     hashtag_id   NUMBER PRIMARY KEY, -- 해시태그 고유 ID
-    tag          VARCHAR2(30) NOT NULL -- 해시태그 텍스트 
+    tag          VARCHAR2(30) UNIQUE NOT NULL -- 해시태그 텍스트 
 );
 ```
 
