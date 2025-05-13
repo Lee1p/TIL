@@ -9,8 +9,8 @@ CREATE TABLE Chatroom (
   title                 VARCHAR2(100) NOT NULL CHECK (LENGTH(title) BETWEEN 2 AND 100), --	채팅방 제목 (필수, 수정 불가, 길이 제약: 2자 이상 30자 이하)
   thumbnail_image_url   VARCHAR2(255), -- 썸네일 이미지 경로 (URL 기반, 직접 저장 아님)
   is_deleted            CHAR(1) DEFAULT 'N' CHECK (is_deleted IN ('Y', 'N')), -- 채팅방 삭제 여부 
-  created_at            DATE DEFAULT SYSDATE, -- 채팅방 생성일 
-  latest_notice_id      NUMBER, -- 최신 공지사항 ID
+  created_at            DATE DEFAULT SYSDATE, -- 채팅방 생성일
+  updated_at            DATE -- 상태 변경일 (삭제 or 블라인드 시점 등)
 
   CONSTRAINT fk_chatroom_latest_notice FOREIGN KEY (latest_notice_id)
     REFERENCES Chatroom_Notice_History(notice_id)
@@ -69,13 +69,10 @@ CREATE TABLE chatroom_user (
 
     joined_at            DATE DEFAULT SYSDATE, -- 채팅방 입장 시각
     left_at              DATE,                -- 채팅방 퇴장 시각 (nullable)
-    is_active            CHAR(1) DEFAULT 'Y' 
-                         CHECK (is_active IN ('Y', 'N')),
-                         -- 채팅방 접속 여부 (실시간 목록 판단용)
-
-    is_kicked            CHAR(1) DEFAULT 'N' 
-                         CHECK (is_kicked IN ('Y', 'N')), -- 강제 퇴장 여부
-    kicked_at            DATE,                 -- 강제 퇴장 시각 (nullable)
+    status VARCHAR2(10) CHECK (
+    status IN ('JOINED', 'LEFT', 'KICKED')
+    ),
+    status_updated_at DATE,
 
     last_read_message_id NUMBER,              -- 마지막 읽은 메시지 ID (읽음 처리, 알림 뱃지용)
 
@@ -157,15 +154,6 @@ CREATE TABLE chatroom_like (
 이렇게 만들려고함. 채팅방에 대해 좋아요 한 번만 가능 -> 복합 PK로 중복 방지 </br>
 
 
-### 강퇴 시간 
-단순히 "강퇴당했는가(Y/N)"만 저장하면, 언제 강퇴됐는지는 알 수 없음 </br>
- “강퇴된 사용자는 해당 방에 재입장 불가”  -> 강퇴 시점을 저장하면, 그 이후 입장을 막거나 로그로 확인 가능
-```sql
-is_kicked      CHAR(1) DEFAULT 'N' CHECK (is_kicked IN ('Y', 'N')),
-kicked_at      DATE
-```
-
-
 ### ✅ 메시지(Message) 테이블
 
 하나의 채팅방에는 여러 사용자가 참여할 수 있음. 이 메시지 테이블에는 채팅방 안에서 실제 주고받는 채팅 메시지를 저장 </br>
@@ -188,25 +176,23 @@ message_content: 무엇을
 ```SQL
 
 CREATE TABLE chat_message (
-    message_id       NUMBER PRIMARY KEY,
-    chatroom_id      NUMBER NOT NULL,
-    member_id        NUMBER NOT NULL,
-    
-    message_type     VARCHAR2(20 CHAR) DEFAULT 'TEXT'
-                     CHECK (message_type IN ('TEXT', 'IMAGE', 'VIDEO', 'LOCATION', 'SYSTEM')),
+    message_id         NUMBER PRIMARY KEY,        -- 메시지 고유 ID
+    chatroom_id        NUMBER NOT NULL,           -- 채팅방 ID (FK)
+    member_id          NUMBER,                    -- 보낸 사용자 ID (FK), SYSTEM 메시지일 경우 NULL 가능
 
-    message_content  CLOB,                     -- 텍스트 메시지 / 시스템 메시지 / 위치 설명글
-    file_url         VARCHAR2(255),            -- 첨부파일 경로 (이미지, 영상 등)
-    file_type        VARCHAR2(50),             -- MIME 타입 (image/png 등)
+    message_type       VARCHAR2(20) DEFAULT 'TEXT' 
+                       CHECK (message_type IN ('TEXT', 'IMAGE', 'VIDEO', 'LOCATION', 'SYSTEM')),
 
-    latitude         NUMBER(9,6),              -- 위치 위도
-    longitude        NUMBER(9,6),              -- 위치 경도
-    location_name    VARCHAR2(100),            -- 장소 이름 (예: 강릉 초당 순두부 거리)
+    message_content    CLOB,                      -- 텍스트 내용 / 시스템 메시지 / 위치 설명 등
 
-    sent_at          DATE DEFAULT SYSDATE,
+    file_url           VARCHAR2(255),             -- 이미지 / 동영상 파일 경로
+    file_type          VARCHAR2(50),              -- MIME 타입 (image/png 등)
 
-    CONSTRAINT fk_msg_chatroom FOREIGN KEY (chatroom_id) REFERENCES chatroom(chatroom_id),
-    CONSTRAINT fk_msg_member FOREIGN KEY (member_id) REFERENCES members(member_id)
+    latitude           NUMBER(10,6),              -- 위치 위도
+    longitude          NUMBER(10,6),              -- 위치 경도
+    location_description VARCHAR2(255),           -- 위치에 대한 사용자 설명
+
+    created_at         DATE DEFAULT SYSDATE       -- 메시지 전송 시각
 );
 
 
@@ -239,7 +225,7 @@ CREATE TABLE chat_message (
 ```sql
 CREATE TABLE hashtag (
     hashtag_id   NUMBER PRIMARY KEY, -- 해시태그 고유 ID
-    tag          VARCHAR2(30) UNIQUE NOT NULL -- 해시태그 텍스트 
+    tag_text          VARCHAR2(30) UNIQUE NOT NULL -- 해시태그 텍스트 
 );
 ```
 
@@ -254,4 +240,82 @@ CREATE TABLE chatroom_hashtag (
 );
 ```
 
+### 멘션 테이블 
+
+```sql
+CREATE TABLE chat_message_mention (
+    message_id           NUMBER NOT NULL,  -- 어떤 메시지에서
+    mentioned_member_id  NUMBER NOT NULL,  -- 누가 호출(멘션)됐는지
+
+    CONSTRAINT pk_msg_mention PRIMARY KEY (message_id, mentioned_member_id),
+    CONSTRAINT fk_mention_msg FOREIGN KEY (message_id) REFERENCES chat_message(message_id),
+    CONSTRAINT fk_mention_user FOREIGN KEY (mentioned_member_id) REFERENCES members(member_id)
+);
+
+```
+
+멘션 기능은 어떤 사용자가 어떤 사용자를 호출했는지 확인해야하고 풀어서 쓰자면
+한 사용자는 여러 사용자를 호출 할 수 있음. 
+또한 한 사용자는 여러 채팅방에서 호출 할 수 있음 .
+N:N 관계 테이블 설계
+
+
+### 메시지 읽음 처리 테이블
+
+메시지 읽음 처리, 안 읽은 메시지 수 계산 + UI 알림
+
+
+"어떤 사용자가 어떤 메시지를 실제로 읽었는가"를 정확하게 추적하는 로그 테이블
+
+1. 읽음 여부 추적
+-> 특정 메시지를 누가 읽었는지를 추적
+3. 안 읽은 메시지 수 카운트
+→ 내가 채팅방 목록을 볼 때, 안 읽은 메시지가 몇 개인지 보여주기
+
+채팅방에 새로운 사용자가 입장하면 → 안 읽은 사람 수 +1
+사용자가 메시지를 읽으면 → 숫자 -1
+
+```sql
+
+CREATE TABLE chat_message_read_log (
+    message_id   NUMBER NOT NULL,
+    member_id    NUMBER NOT NULL,
+    read_at      DATE DEFAULT SYSDATE,
+
+    CONSTRAINT pk_read_log PRIMARY KEY (message_id, member_id),
+    CONSTRAINT fk_read_msg FOREIGN KEY (message_id) REFERENCES chat_message(message_id),
+    CONSTRAINT fk_read_user FOREIGN KEY (member_id) REFERENCES members(member_id)
+);
+
+
+```
+
+### 신고 테이블
+
+신고 테이블은 공통 신고 테이블을 기준
+
+공통 테이블: 신고자, 신고, 대상, 상태, 처리자 등
+
+
+```sql
+
+CREATE TABLE Report (
+    report_id NUMBER PRIMARY KEY,
+    reporter_id NUMBER NOT NULL,
+    reported_id NUMBER, -- 신고 대상 사용자
+    report_type VARCHAR2(30) NOT NULL, -- USER, POST, COMMENT, CHATROOM, CHATMESSAGE
+    target_id NUMBER NOT NULL, -- 신고된 리소스의 ID
+    reason VARCHAR2(30) NOT NULL,
+    detail VARCHAR2(1000),
+    status VARCHAR2(20) DEFAULT 'PENDING' NOT NULL,
+    created_at TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+    processed_at TIMESTAMP,
+    processor_id NUMBER, -- 신고를 처리한 관리자
+    CONSTRAINT fk_report_reporter FOREIGN KEY (reporter_id) REFERENCES users(user_id),
+    CONSTRAINT fk_report_reported FOREIGN KEY (reported_id) REFERENCES users(user_id),
+    CONSTRAINT fk_report_processor FOREIGN KEY (processor_id) REFERENCES users(user_id),
+    CONSTRAINT chk_report_status CHECK (status IN ('PENDING', 'ACCEPTED', 'REJECTED', 'RESOLVED'))
+);
+
+``` 
 
